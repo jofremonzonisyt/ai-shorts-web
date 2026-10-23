@@ -1,16 +1,17 @@
 # Publica a su hora los Reels de Instagram programados de AI Shorts (borradores de release `ig-<episodio>`).
-# El Mac lo activa al programar; el propio flujo se desactiva cuando no queda nada pendiente.
+# El Mac lo activa y lo lanza al programar; la ejecución espera dentro del trabajo y se relanza antes del límite de
+# 6 h. El cron horario es sólo de respaldo (el de GitHub se retrasa o se omite). Se desactiva cuando no queda nada.
 # Detalle: .github/scripts/instagram_programado.py
 name: Instagram programado
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '23 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write   # leer borradores, publicarlos y borrar adjuntos
-  actions: write    # desactivar el flujo cuando no queda nada
+  actions: write    # relanzar el flujo y desactivarlo cuando no queda nada
 
 concurrency:
   group: instagram-programado
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   publicar:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:

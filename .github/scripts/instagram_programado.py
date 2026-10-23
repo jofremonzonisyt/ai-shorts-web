@@ -27,6 +27,8 @@ IG = 'https://graph.instagram.com/v26.0/'
 WORKFLOW = 'instagram-programado.yml'
 LEAD = timedelta(minutes=20)        # Antelación con la que se crea el contenedor.
 PROCESS_LIMIT = timedelta(minutes=25)
+MAX_RUN = timedelta(hours=5)          # Antes del límite de 6 h por trabajo.
+ANNOUNCED = set()
 DONE = {'published', 'dry_run_ok', 'error'}
 
 
@@ -121,7 +123,9 @@ def process(release, data):
     tag = release['tag_name']
     at = datetime.fromisoformat(data['scheduledAt'])
     if now() < at - LEAD:
-        print('%s: programado, faltan %d min' % (tag, (at - now()).total_seconds() // 60))
+        if tag not in ANNOUNCED:
+            ANNOUNCED.add(tag)
+            print('%s: programado, faltan %d min' % (tag, (at - now()).total_seconds() // 60))
         return
     if not IG_TOKEN:
         raise RuntimeError('Falta el secreto IG_TOKEN')
@@ -181,10 +185,10 @@ def process(release, data):
     print('%s: publicado con %d s de diferencia' % (tag, data['delaySeconds']))
 
 
-def main():
-    releases = [r for r in gh('/releases?per_page=100') if r['tag_name'].startswith('ig-')]
-    pending, failed = 0, []
-    for release in releases:
+def sweep(failed):
+    """Procesa lo que toca y devuelve cuántas publicaciones siguen pendientes."""
+    pending = 0
+    for release in [r for r in gh('/releases?per_page=100') if r['tag_name'].startswith('ig-')]:
         try:
             data = json.loads(release.get('body') or '{}')
         except ValueError:
@@ -192,7 +196,6 @@ def main():
             continue
         if data.get('state') in DONE:
             continue
-        pending += 1
         try:
             process(release, data)
         except Exception as error:  # Se registra y se sigue con los demás.
@@ -204,13 +207,29 @@ def main():
             except Exception:
                 pass
             failed.append('%s: %s' % (release['tag_name'], message))
-        else:
-            if data.get('state') in DONE:
-                pending -= 1
-    if not pending and not failed:
-        # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente.
-        gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
-        print('Sin publicaciones pendientes: flujo desactivado')
+        if data.get('state') not in DONE:
+            pending += 1
+    return pending
+
+
+def main():
+    # El cron de GitHub es de mejor esfuerzo (se retrasa o se omite): la ejecución espera dentro del trabajo,
+    # revisando cada minuto, y antes del límite de 6 h se relanza con workflow_dispatch, que siempre crea una
+    # ejecución aunque lo lance el GITHUB_TOKEN. El cron horario queda de respaldo.
+    started, failed = now(), []
+    while True:
+        pending = sweep(failed)
+        if not pending:
+            if not failed:
+                # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente.
+                gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
+                print('Sin publicaciones pendientes: flujo desactivado')
+            break
+        if now() - started > MAX_RUN:
+            gh('/actions/workflows/%s/dispatches' % WORKFLOW, 'POST', {'ref': 'main'})
+            print('Sigue pendiente: relanzado')
+            break
+        time.sleep(60)
     if failed:
         print('\n'.join('ERROR ' + f for f in failed))
         sys.exit(1)
