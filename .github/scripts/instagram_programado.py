@@ -221,9 +221,14 @@ def main():
         pending = sweep(failed)
         if not pending:
             if not failed:
-                # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente.
-                gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
-                print('Sin publicaciones pendientes: flujo desactivado')
+                # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente. Una ejecución del cron que esperaba en
+                # cola detrás de la que publicó lo encuentra ya desactivado, y desactivarlo otra vez devuelve 403: un fallo
+                # falso que manda el correo de GitHub aunque el Reel salió (grok-odisea-ia-048).
+                if gh('/actions/workflows/%s' % WORKFLOW).get('state') == 'active':
+                    gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
+                    print('Sin publicaciones pendientes: flujo desactivado')
+                else:
+                    print('Sin publicaciones pendientes: el flujo ya estaba desactivado')
             break
         if now() - started > MAX_RUN:
             gh('/actions/workflows/%s/dispatches' % WORKFLOW, 'POST', {'ref': 'main'})
