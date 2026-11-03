@@ -221,9 +221,14 @@ def main():
         pending = sweep(failed)
         if not pending:
             if not failed:
-                # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente.
-                gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
-                print('Sin publicaciones pendientes: flujo desactivado')
+                # Nada pendiente: el Mac lo vuelve a activar al programar el siguiente. GitHub responde 403 al
+                # desactivar un flujo ya desactivado, que es lo normal en el respaldo del cron: queda en cola tras
+                # la ejecución que publicó y arranca cuando ésta ya lo ha desactivado.
+                if gh('/actions/workflows/%s' % WORKFLOW).get('state') == 'active':
+                    gh('/actions/workflows/%s/disable' % WORKFLOW, 'PUT')
+                    print('Sin publicaciones pendientes: flujo desactivado')
+                else:
+                    print('Sin publicaciones pendientes: el flujo ya estaba desactivado')
             break
         if now() - started > MAX_RUN:
             gh('/actions/workflows/%s/dispatches' % WORKFLOW, 'POST', {'ref': 'main'})
