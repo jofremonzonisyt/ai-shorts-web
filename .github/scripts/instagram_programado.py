@@ -215,7 +215,7 @@ def sweep(failed):
 def main():
     # El cron de GitHub es de mejor esfuerzo (se retrasa o se omite): la ejecución espera dentro del trabajo,
     # revisando cada minuto, y antes del límite de 6 h se relanza con workflow_dispatch, que siempre crea una
-    # ejecución aunque lo lance el GITHUB_TOKEN. El cron horario queda de respaldo.
+    # ejecución aunque lo lance el GITHUB_TOKEN. El cron cada 15 min queda de respaldo.
     started, failed = now(), []
     while True:
         pending = sweep(failed)
